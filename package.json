@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "dotenv": "^17.2.1",
-    "playwright": "^1.55.0"
+    "playwright": "^1.55.0",
+    "@testdino/playwright": "file:./vendor/testdino-playwright-2.2.1.tgz"
   }
 }
