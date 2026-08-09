@@ -1,0 +1,43 @@
+# Dataset fixture pipelines: one matrix job per dataset so each lands as its
+# own TestDino run — all-failures (fully red) and all-flaky (green, every case
+# flaky). Complements the mixed red fixture and the green fixture workflows.
+
+name: TestDino Dataset E2E
+
+on:
+  push:
+    paths:
+      - 'tests/testdino-trigger-allfail.spec.js'
+      - 'tests/testdino-trigger-allflaky.spec.js'
+      - '.github/workflows/testdino-datasets-e2e.yml'
+  workflow_dispatch:
+
+jobs:
+  dataset:
+    name: ${{ matrix.dataset }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        dataset: [allfail, allflaky]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run ${{ matrix.dataset }} fixtures via tdpw
+        env:
+          TESTDINO_TOKEN: ${{ secrets.TESTDINO_E2E_TOKEN }}
+          TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+          TESTDINO_TRIGGER_NOTE_URL: ${{ vars.TESTDINO_TRIGGER_NOTE_URL }}
+        run: npx tdpw test tests/testdino-trigger-${{ matrix.dataset }}.spec.js --project=chromium
