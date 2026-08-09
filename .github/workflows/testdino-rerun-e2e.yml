@@ -1,0 +1,51 @@
+# E2E fixture workflow for TestDino dashboard-triggered reruns (native rerun).
+# One unsharded job running only the deterministic trigger fixtures via tdpw.
+# Attempt 1: 2 fail + 2 flaky + 2 pass. A dashboard "Rerun failed/flaky" fires
+# GitHub's native rerun; on attempt >= 2 tdpw fetches the trigger note and
+# injects --last-failed so ONLY the selected tests execute.
+
+name: TestDino Rerun E2E
+
+on:
+  push:
+    paths:
+      - 'tests/testdino-trigger-e2e.spec.js'
+      - 'tests/testdino-trigger-green.spec.js'
+      - '.github/workflows/testdino-rerun-e2e.yml'
+      - 'vendor/**'
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'red = 2 fail + 2 flaky (rerun-failed path); green = flaky only (rerun-flaky-on-green path)'
+        type: choice
+        options: [red, green]
+        default: red
+
+jobs:
+  rerun-e2e:
+    name: Rerun E2E fixtures
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run trigger fixtures via tdpw
+        env:
+          # TESTDINO_E2E_TOKEN targets the LOCAL stack through the tunnels.
+          TESTDINO_TOKEN: ${{ secrets.TESTDINO_E2E_TOKEN }}
+          TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+          TESTDINO_TRIGGER_NOTE_URL: ${{ vars.TESTDINO_TRIGGER_NOTE_URL }}
+          # Spec path as a positional: on a rerun attempt it INTERSECTS with the
+          # injected --last-failed selection instead of suppressing it.
+          TD_SPEC: ${{ inputs.scenario == 'green' && 'tests/testdino-trigger-green.spec.js' || 'tests/testdino-trigger-e2e.spec.js' }}
+        run: npx tdpw test "$TD_SPEC" --project=chromium
