@@ -1,0 +1,38 @@
+# All-green pipeline with flaky tests: 2 pass + 2 flaky (fail once, pass on
+# retry). Ends green — the "Rerun flaky" on a green run path. Kept as its own
+# workflow so its rerun semantics stay independent of the red fixture pipeline.
+
+name: TestDino Green E2E
+
+on:
+  push:
+    paths:
+      - 'tests/testdino-trigger-green.spec.js'
+      - '.github/workflows/testdino-green-e2e.yml'
+      - 'vendor/**'
+  workflow_dispatch:
+
+jobs:
+  green-e2e:
+    name: Green fixtures (flaky only)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run green fixtures via tdpw
+        env:
+          TESTDINO_TOKEN: ${{ secrets.TESTDINO_E2E_TOKEN }}
+          TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+          TESTDINO_TRIGGER_NOTE_URL: ${{ vars.TESTDINO_TRIGGER_NOTE_URL }}
+        run: npx tdpw test tests/testdino-trigger-green.spec.js --project=chromium
