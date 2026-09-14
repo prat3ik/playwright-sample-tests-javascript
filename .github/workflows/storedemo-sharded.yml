@@ -1,72 +1,35 @@
-# storedemo.testdino.com journeys (tests/storedemo) in each run mode.
+# storedemo.testdino.com journeys, pipeline 2 of 3: Playwright sharding.
 #
-#   sequential  one machine, one worker                      ~30 min
-#   sharded     two machines (--shard=i/2), two workers each ~8 min
+#   2 machines (--shard=1/2, --shard=2/2) × 2 workers each.
 #
-# A push that touches these suites runs both modes; manual dispatch picks one.
-# Results stream to TestDino. Both shards share one TESTDINO_CI_RUN_ID so they
-# land in a single run.
+# Playwright splits the 20 spec files by count in file-name order, ignoring
+# duration, so one shard usually finishes well before the other. Both shards
+# share one TESTDINO_CI_RUN_ID and appear as a single TestDino run.
+#
+# Trigger manually (Actions tab or `gh workflow run storedemo-sharded.yml`).
+# The push trigger only registers the workflow from a non-default branch; its
+# jobs are skipped on push.
 #
 # Secrets/variables:
 #   secrets.STOREDEMO_TESTDINO_TOKEN   TestDino project API key
-#   vars.TESTDINO_SERVER_URL           TestDino reporter endpoint (optional)
+#   vars.TESTDINO_SERVER_URL           TestDino server URL
 
-name: Storedemo Run Modes
+name: Storedemo 2 · Sharded
 
 on:
   push:
     paths:
-      - 'tests/storedemo/**'
-      - 'playwright.storedemo.config.js'
-      - '.github/workflows/storedemo-run-modes.yml'
+      - '.github/workflows/storedemo-sharded.yml'
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Which run mode to execute'
-        type: choice
-        options: [sharded, sequential, both]
-        default: sharded
 
 env:
   TESTDINO_TOKEN: ${{ secrets.STOREDEMO_TESTDINO_TOKEN }}
   TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
 
 jobs:
-  sequential:
-    name: Sequential (1 machine × 1 worker)
-    if: github.event_name == 'push' || inputs.mode == 'sequential' || inputs.mode == 'both'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 20.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install deps + chromium
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-
-      - name: Run journeys sequentially
-        env:
-          TESTDINO_CI_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-sequential
-        run: npm run storedemo:sequential
-
-      - name: Upload HTML report
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: storedemo-sequential-report
-          path: storedemo-report
-          retention-days: 7
-
   sharded:
-    name: Sharded ${{ matrix.shardIndex }}/${{ matrix.shardTotal }} (2 workers)
-    if: github.event_name == 'push' || inputs.mode == 'sharded' || inputs.mode == 'both'
+    name: Shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }} (2 workers)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -99,11 +62,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: storedemo-blob-${{ matrix.shardIndex }}
-          path: storedemo-blob-report
+          path: storedemo/blob-report
           retention-days: 1
 
-  merge-sharded:
-    name: Merge sharded reports
+  merge-reports:
+    name: Merge shard reports
     needs: sharded
     if: ${{ !cancelled() && needs.sharded.result != 'skipped' }}
     runs-on: ubuntu-latest

@@ -1,0 +1,56 @@
+# storedemo.testdino.com journeys, pipeline 1 of 3: sequential.
+#
+#   1 machine × 1 worker. The 20 journey spec files run one after another.
+#
+# Trigger manually (Actions tab or `gh workflow run storedemo-sequential.yml`).
+# The push trigger only registers the workflow from a non-default branch; its
+# job is skipped on push.
+#
+# Secrets/variables:
+#   secrets.STOREDEMO_TESTDINO_TOKEN   TestDino project API key
+#   vars.TESTDINO_SERVER_URL           TestDino server URL
+
+name: Storedemo 1 · Sequential
+
+on:
+  push:
+    paths:
+      - '.github/workflows/storedemo-sequential.yml'
+  workflow_dispatch:
+
+env:
+  TESTDINO_TOKEN: ${{ secrets.STOREDEMO_TESTDINO_TOKEN }}
+  TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+
+jobs:
+  sequential:
+    name: Sequential (1 machine × 1 worker)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run journeys sequentially
+        env:
+          TESTDINO_CI_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-sequential
+        run: npm run storedemo:sequential
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-sequential-report
+          path: storedemo/report
+          retention-days: 7

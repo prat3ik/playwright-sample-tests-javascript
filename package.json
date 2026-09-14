@@ -2,8 +2,9 @@
   "name": "playwright-js-framework",
   "version": "1.0.0",
   "scripts": {
-    "storedemo:sequential": "playwright test --config=playwright.storedemo.config.js --project=sequential --workers=1",
-    "storedemo:sharded": "playwright test --config=playwright.storedemo.config.js --project=sharded --workers=2"
+    "storedemo:sequential": "cd storedemo && playwright test --workers=1",
+    "storedemo:sharded": "cd storedemo && playwright test --workers=2",
+    "storedemo:orchestrate:discover": "cd storedemo && tdpw orchestrate discover --machines 2 --project storedemo --out .orchestration.json"
   },
   "keywords": [],
   "author": "",

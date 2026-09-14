@@ -15,14 +15,21 @@ import {
   logIn,
   signUpAndLogIn,
   PASSWORD,
+  planDurations,
+  durationDetails,
 } from './support.js';
 
 /**
  * 20 shopper journeys against storedemo.testdino.com.
  *
- * The run-mode spec files (sequential, sharded, ...) register these same
- * journeys, so the only thing that differs between them is how Playwright
- * schedules the work.
+ * Each journey is registered by its own spec file in journeys/ (one test per
+ * file), because TestDino orchestration distributes whole spec files. The
+ * sequential, sharded and orchestrated pipelines all run these same files, so
+ * only the scheduling differs between them and every run adds to the duration
+ * history the orchestrator balances with.
+ *
+ * `minTier` is the shortest duration tier a journey's real work fits in on CI
+ * (measured with pauses off; see planDurations in support.js).
  *
  * Store quirks these journeys work around:
  * - /product/<slug> only renders via in-app navigation, so products are opened
@@ -31,10 +38,12 @@ import {
  *   stop before placing the order.
  */
 
-/** @type {{ title: string, run: (args: { page: import('@playwright/test').Page }) => Promise<void> }[]} */
+/** @type {{ id: string, title: string, minTier?: '10s' | '20s' | '1m' | '2m' | '4m', run: (args: { page: import('@playwright/test').Page }) => Promise<void> }[]} */
 export const journeys = [
   {
+    id: 'home-sections',
     title: 'home page shows every storefront section',
+    minTier: '20s',
     run: async ({ page }) => {
       await test.step('Open the storefront', async () => {
         await openHome(page);
@@ -65,7 +74,9 @@ export const journeys = [
   },
 
   {
+    id: 'header-menu',
     title: 'header menu navigates between the main pages',
+    minTier: '10s',
     run: async ({ page }) => {
       await openHome(page);
       const stops = [
@@ -94,7 +105,9 @@ export const journeys = [
   },
 
   {
+    id: 'footer-links',
     title: 'footer useful links open their pages',
+    minTier: '10s',
     run: async ({ page }) => {
       await openHome(page);
       for (const [link, landmark] of [
@@ -115,7 +128,9 @@ export const journeys = [
   },
 
   {
+    id: 'policy-pages',
     title: 'customer policy pages are readable from the footer',
+    minTier: '10s',
     run: async ({ page }) => {
       await openHome(page);
       for (const [link, heading] of [
@@ -137,7 +152,9 @@ export const journeys = [
   },
 
   {
+    id: 'legal-social',
     title: 'legal pages and social links are present',
+    minTier: '10s',
     run: async ({ page }) => {
       await openHome(page);
       await test.step('Social icons link out', async () => {
@@ -162,7 +179,9 @@ export const journeys = [
   },
 
   {
+    id: 'hero-offers',
     title: 'hero and offer banners lead to the catalogue',
+    minTier: '10s',
     run: async ({ page }) => {
       for (const cta of ['hero-shop-now', 'offer-shop-now-1', 'offer-shop-now-2']) {
         await test.step(`Click ${cta}`, async () => {
@@ -179,7 +198,9 @@ export const journeys = [
   },
 
   {
+    id: 'category-explore',
     title: 'category explore links open the catalogue',
+    minTier: '10s',
     run: async ({ page }) => {
       for (const category of ['camera', 'appliances', 'gadgets', 'laptop']) {
         await test.step(`Explore ${category}`, async () => {
@@ -196,7 +217,9 @@ export const journeys = [
   },
 
   {
+    id: 'catalogue-search',
     title: 'catalogue search narrows results by name',
+    minTier: '10s',
     run: async ({ page }) => {
       await openCatalogue(page);
       const total = await productCards(page).count();
@@ -225,7 +248,9 @@ export const journeys = [
   },
 
   {
+    id: 'catalogue-filters',
     title: 'catalogue filters and view switcher',
+    minTier: '10s',
     run: async ({ page }) => {
       await openCatalogue(page);
       const total = await productCards(page).count();
@@ -258,7 +283,9 @@ export const journeys = [
   },
 
   {
+    id: 'product-tabs',
     title: 'product details tabs across several products',
+    minTier: '20s',
     run: async ({ page }) => {
       for (const n of [0, 3, 6]) {
         await test.step(`Inspect product #${n + 1}`, async () => {
@@ -281,7 +308,9 @@ export const journeys = [
   },
 
   {
+    id: 'related-products',
     title: 'you may also like chains through related products',
+    minTier: '20s',
     run: async ({ page }) => {
       await openCatalogue(page);
       const visited = [await openNthProduct(page, 1)];
@@ -319,7 +348,9 @@ export const journeys = [
   },
 
   {
+    id: 'cart-drawer',
     title: 'guest adds several products to the cart drawer',
+    minTier: '20s',
     run: async ({ page }) => {
       const added = [];
       for (const n of [0, 2, 4]) {
@@ -347,7 +378,9 @@ export const journeys = [
   },
 
   {
+    id: 'cart-quantity',
     title: 'cart page quantity changes update the totals',
+    minTier: '1m',
     run: async ({ page }) => {
       await openCatalogue(page);
       await openNthProduct(page, 1);
@@ -372,7 +405,9 @@ export const journeys = [
   },
 
   {
+    id: 'cart-remove',
     title: 'removing every cart item shows the empty cart',
+    minTier: '20s',
     run: async ({ page }) => {
       for (const n of [5, 7]) {
         await openCatalogue(page);
@@ -403,7 +438,9 @@ export const journeys = [
   },
 
   {
+    id: 'wishlist',
     title: 'wishlist add and remove from the catalogue',
+    minTier: '10s',
     run: async ({ page }) => {
       await page.goto('/wishlist');
       await expect(page.getByTestId('wishlist-empty-title')).toBeVisible({ timeout: 30_000 });
@@ -447,7 +484,9 @@ export const journeys = [
   },
 
   {
+    id: 'newsletter-contact',
     title: 'newsletter subscription and contact form submission',
+    minTier: '20s',
     run: async ({ page }) => {
       await test.step('Subscribe to the newsletter', async () => {
         await openHome(page);
@@ -476,7 +515,9 @@ export const journeys = [
   },
 
   {
+    id: 'signup-account',
     title: 'new shopper signs up and sees their account',
+    minTier: '20s',
     run: async ({ page }) => {
       const account = await test.step('Create an account from the login page', async () => {
         await openHome(page);
@@ -505,7 +546,9 @@ export const journeys = [
   },
 
   {
+    id: 'login-validation',
     title: 'login rejects a wrong password then accepts the right one',
+    minTier: '20s',
     run: async ({ page }) => {
       const { email } = await signUp(page);
 
@@ -533,7 +576,9 @@ export const journeys = [
   },
 
   {
+    id: 'profile-update',
     title: 'logged-in shopper updates their profile details',
+    minTier: '20s',
     run: async ({ page }) => {
       await signUpAndLogIn(page, { firstName: 'Grace', lastName: 'Hopper' });
       await page.getByTestId('header-user-icon').click();
@@ -558,7 +603,9 @@ export const journeys = [
   },
 
   {
+    id: 'checkout',
     title: 'logged-in shopper fills checkout address and payment',
+    minTier: '1m',
     run: async ({ page }) => {
       const account = await signUpAndLogIn(page, { firstName: 'Linus', lastName: 'Torvalds' });
 
@@ -617,3 +664,15 @@ export const journeys = [
     },
   },
 ];
+
+/**
+ * Looks up a journey for its spec file in journeys/. The spec file calls test()
+ * itself so each test's location is its own file, which is what orchestration
+ * dispatches and what reports link to.
+ */
+export function journey(id) {
+  const found = journeys.find((j) => j.id === id);
+  if (!found) throw new Error(`unknown journey id "${id}"`);
+  planDurations(journeys);
+  return { title: found.title, details: durationDetails(found.title), run: found.run };
+}

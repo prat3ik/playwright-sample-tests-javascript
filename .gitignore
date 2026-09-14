@@ -11,5 +11,7 @@ node_modules/
 # Playwright
 /playwright/.auth/
 .env.testdino
-/storedemo-report/
-/storedemo-blob-report/
+/storedemo/test-results/
+/storedemo/report/
+/storedemo/blob-report/
+/storedemo/.orchestration.json

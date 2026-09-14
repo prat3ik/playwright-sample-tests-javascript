@@ -1,0 +1,100 @@
+# storedemo.testdino.com journeys, pipeline 3 of 3: TestDino orchestration.
+#
+#   2 machines × 2 workers each, same 20 spec files as the sharded pipeline.
+#
+# 1. discover  lists the suite once and mints an orchestration id. TestDino
+#              orders the spec files by their p95 duration from past runs
+#              (sequential and sharded runs count), longest first.
+# 2. machine   both machines join the orchestration over a WebSocket and pull
+#              batches of up to 2 specs (one per worker) until the queue
+#              drains. The results merge into one TestDino run.
+#
+# Requires the orchestrator enabled on the TestDino server and
+# @testdino/playwright 2.7.0 (vendored; installed only in this workflow).
+#
+# Trigger manually (Actions tab or `gh workflow run storedemo-orchestrated.yml`).
+# The push trigger only registers the workflow from a non-default branch; its
+# jobs are skipped on push.
+#
+# Secrets/variables:
+#   secrets.STOREDEMO_TESTDINO_TOKEN   TestDino project API key
+#   vars.TESTDINO_SERVER_URL           TestDino server URL
+
+name: Storedemo 3 · Orchestrated
+
+on:
+  push:
+    paths:
+      - '.github/workflows/storedemo-orchestrated.yml'
+  workflow_dispatch:
+
+env:
+  TESTDINO_TOKEN: ${{ secrets.STOREDEMO_TESTDINO_TOKEN }}
+  TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+
+jobs:
+  discover:
+    name: Discover and mint orchestration
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      orchestration_id: ${{ steps.discover.outputs.orchestration_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + TestDino CLI 2.7.0
+        run: |
+          npm ci
+          npm install --no-save ./vendor/testdino-playwright-2.7.0.tgz
+
+      - name: Discover
+        id: discover
+        run: |
+          npm run storedemo:orchestrate:discover
+          id=$(node -p "require('./storedemo/.orchestration.json').orchestrationId")
+          specs=$(node -p "require('./storedemo/.orchestration.json').specCount")
+          echo "orchestration $id with $specs spec files"
+          test "$specs" -gt 0
+          echo "orchestration_id=$id" >> "$GITHUB_OUTPUT"
+
+  machine:
+    name: Machine m${{ matrix.machine }} (2 workers)
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        machine: [1, 2]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + TestDino CLI 2.7.0 + chromium
+        run: |
+          npm ci
+          npm install --no-save ./vendor/testdino-playwright-2.7.0.tgz
+          npx playwright install --with-deps chromium
+
+      # Exits 0 when the orchestrator sends `end`, even if tests failed;
+      # TestDino holds the real result.
+      - name: Join orchestration and run assigned specs
+        working-directory: storedemo
+        run: >
+          npx tdpw orchestrate run
+          --orchestration-id "${{ needs.discover.outputs.orchestration_id }}"
+          --device-id "m${{ matrix.machine }}"
+          --workers=2
