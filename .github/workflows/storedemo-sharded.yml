@@ -1,0 +1,184 @@
+# storedemo.testdino.com journeys, pipeline 2 of 3: Playwright sharding.
+#
+#   2 machines (--shard=1/2, --shard=2/2) × 2 workers each.
+#
+# Playwright splits the 20 spec files by count in file-name order, ignoring
+# duration, so one shard usually finishes well before the other. Both shards
+# share one TESTDINO_CI_RUN_ID and appear as a single TestDino run.
+#
+# Trigger manually (Actions tab or `gh workflow run storedemo-sharded.yml`).
+# The push trigger only registers the workflow from a non-default branch; its
+# jobs are skipped on push.
+#
+# Re-runs: the TestDino re-run sheet dispatches this workflow with
+# `testdino_rerun_from` set. The shards are skipped and a single unsharded job
+# runs the selected tests through `tdpw test --rerun` — sharding a handful of
+# tests across two runners costs more than it saves, and the selection already
+# names exactly which tests to run.
+#
+# Secrets/variables:
+#   secrets.STOREDEMO_TESTDINO_TOKEN   TestDino project API key
+#   vars.TESTDINO_SERVER_URL           TestDino server URL
+
+name: Storedemo 2 · Sharded
+
+on:
+  push:
+    paths:
+      - '.github/workflows/storedemo-sharded.yml'
+  workflow_dispatch:
+    # Declaring these is what makes the workflow selectable in the re-run sheet:
+    # the dashboard hides any workflow without `testdino_rerun_from`, and GitHub
+    # rejects a dispatch carrying an input the workflow does not declare.
+    inputs:
+      testdino_rerun_from:
+        description: 'TestDino run id to re-run from (empty = normal sharded run)'
+        required: false
+        default: ''
+      testdino_rerun_scope:
+        description: 'failed | flaky | all'
+        required: false
+        default: 'failed'
+      testdino_rerun_test_ids:
+        description: 'Comma-separated test ids — exactly these (overrides scope)'
+        required: false
+        default: ''
+      testdino_rerun_exclude_ids:
+        description: 'Comma-separated test ids to drop from the scope'
+        required: false
+        default: ''
+      testdino_rerun_sha:
+        description: 'Commit to check out, for a same-commit re-run'
+        required: false
+        default: ''
+
+env:
+  TESTDINO_TOKEN: ${{ secrets.STOREDEMO_TESTDINO_TOKEN }}
+  TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+
+jobs:
+  sharded:
+    name: Shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }} (2 workers)
+    if: github.event_name == 'workflow_dispatch' && inputs.testdino_rerun_from == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
+
+    steps:
+      # workflow_dispatch resolves `ref` to the branch TIP, so a same-commit
+      # re-run has to travel as an input and be checked out here. `github.sha`
+      # keeps push and every other trigger on the ref the event already chose.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        env:
+          TESTDINO_CI_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-sharded
+        run: npm run storedemo:sharded -- --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-blob-${{ matrix.shardIndex }}
+          path: storedemo/blob-report
+          retention-days: 1
+
+  merge-reports:
+    name: Merge shard reports
+    needs: sharded
+    if: ${{ !cancelled() && needs.sharded.result != 'skipped' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: storedemo-blob-*
+          merge-multiple: true
+
+      - name: Merge into one HTML report
+        run: npx playwright merge-reports --reporter=html ./all-blob-reports
+
+      - name: Upload merged HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-sharded-report
+          path: playwright-report
+          retention-days: 7
+
+  rerun:
+    name: Re-run selected tests (unsharded)
+    if: github.event_name == 'workflow_dispatch' && inputs.testdino_rerun_from != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # `--rerun` needs CLI 2.7.0. package.json pins 2.3.1, which fails with
+      # `unknown option '--rerun'`, so the vendored tarball is installed on top.
+      - name: Install deps + TestDino CLI 2.7.0 + chromium
+        run: |
+          npm ci
+          npm install --no-save ./vendor/testdino-playwright-2.7.0.tgz
+          npx playwright install --with-deps chromium
+
+      # No TESTDINO_CI_RUN_ID here: a re-run is its own TestDino run, not
+      # another shard merged into the source run.
+      - name: Re-run via tdpw
+        working-directory: storedemo
+        env:
+          TD_FROM: ${{ inputs.testdino_rerun_from }}
+          TD_SCOPE: ${{ inputs.testdino_rerun_scope }}
+          TD_TEST_IDS: ${{ inputs.testdino_rerun_test_ids }}
+          TD_EXCLUDE_IDS: ${{ inputs.testdino_rerun_exclude_ids }}
+        run: |
+          set -- --rerun "${TD_SCOPE:-failed}" --from-run "$TD_FROM"
+          if [ -n "$TD_TEST_IDS" ]; then set -- "$@" --test-ids "$TD_TEST_IDS"; fi
+          if [ -n "$TD_EXCLUDE_IDS" ]; then set -- "$@" --exclude-ids "$TD_EXCLUDE_IDS"; fi
+          echo "tdpw test $*"
+          npx tdpw test "$@"
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-rerun-report
+          path: storedemo/report
+          retention-days: 7
