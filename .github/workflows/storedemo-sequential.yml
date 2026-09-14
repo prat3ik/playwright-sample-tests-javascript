@@ -105,8 +105,10 @@ jobs:
         with:
           node-version: '20'
 
-      # `--rerun` needs CLI 2.7.0. package.json pins 2.3.1, which fails with
-      # `unknown option '--rerun'`, so the vendored tarball is installed on top.
+      # `--rerun` needs CLI 2.7.0 — the pinned 2.3.1 fails with
+      # `unknown option '--rerun'` — so the vendored tarball goes on top of
+      # `npm ci`. It also needs Playwright 1.56+ (it drives --test-list, added
+      # in 1.56); package.json now pins a newer Playwright, so npm ci covers it.
       - name: Install deps + TestDino CLI 2.7.0 + chromium
         run: |
           npm ci
