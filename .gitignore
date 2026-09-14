@@ -10,3 +10,6 @@ node_modules/
 
 # Playwright
 /playwright/.auth/
+.env.testdino
+/storedemo-report/
+/storedemo-blob-report/

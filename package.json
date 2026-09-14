@@ -1,7 +1,10 @@
 {
   "name": "playwright-js-framework",
   "version": "1.0.0",
-  "scripts": {},
+  "scripts": {
+    "storedemo:sequential": "playwright test --config=playwright.storedemo.config.js --project=sequential --workers=1",
+    "storedemo:sharded": "playwright test --config=playwright.storedemo.config.js --project=sharded --workers=2"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

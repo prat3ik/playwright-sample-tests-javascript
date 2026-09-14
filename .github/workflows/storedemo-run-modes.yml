@@ -1,0 +1,136 @@
+# storedemo.testdino.com journeys (tests/storedemo) in each run mode.
+#
+#   sequential  one machine, one worker                      ~30 min
+#   sharded     two machines (--shard=i/2), two workers each ~8 min
+#
+# A push that touches these suites runs both modes; manual dispatch picks one.
+# Results stream to TestDino. Both shards share one TESTDINO_CI_RUN_ID so they
+# land in a single run.
+#
+# Secrets/variables:
+#   secrets.STOREDEMO_TESTDINO_TOKEN   TestDino project API key
+#   vars.TESTDINO_SERVER_URL           TestDino reporter endpoint (optional)
+
+name: Storedemo Run Modes
+
+on:
+  push:
+    paths:
+      - 'tests/storedemo/**'
+      - 'playwright.storedemo.config.js'
+      - '.github/workflows/storedemo-run-modes.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Which run mode to execute'
+        type: choice
+        options: [sharded, sequential, both]
+        default: sharded
+
+env:
+  TESTDINO_TOKEN: ${{ secrets.STOREDEMO_TESTDINO_TOKEN }}
+  TESTDINO_SERVER_URL: ${{ vars.TESTDINO_SERVER_URL }}
+
+jobs:
+  sequential:
+    name: Sequential (1 machine × 1 worker)
+    if: github.event_name == 'push' || inputs.mode == 'sequential' || inputs.mode == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run journeys sequentially
+        env:
+          TESTDINO_CI_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-sequential
+        run: npm run storedemo:sequential
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-sequential-report
+          path: storedemo-report
+          retention-days: 7
+
+  sharded:
+    name: Sharded ${{ matrix.shardIndex }}/${{ matrix.shardTotal }} (2 workers)
+    if: github.event_name == 'push' || inputs.mode == 'sharded' || inputs.mode == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        env:
+          TESTDINO_CI_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-sharded
+        run: npm run storedemo:sharded -- --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-blob-${{ matrix.shardIndex }}
+          path: storedemo-blob-report
+          retention-days: 1
+
+  merge-sharded:
+    name: Merge sharded reports
+    needs: sharded
+    if: ${{ !cancelled() && needs.sharded.result != 'skipped' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: storedemo-blob-*
+          merge-multiple: true
+
+      - name: Merge into one HTML report
+        run: npx playwright merge-reports --reporter=html ./all-blob-reports
+
+      - name: Upload merged HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-sharded-report
+          path: playwright-report
+          retention-days: 7
