@@ -16,6 +16,13 @@
 # The push trigger only registers the workflow from a non-default branch; its
 # jobs are skipped on push.
 #
+# Re-runs: the TestDino re-run sheet dispatches this workflow with
+# `testdino_rerun_from` set. Discover and the machines are skipped and one job
+# runs the selected tests through `tdpw test --rerun`. A re-run is deliberately
+# NOT orchestrated: `orchestrate discover` selects by --project/--grep over the
+# whole testDir and has no rerun scope, and the re-run feature does not use the
+# orchestrator at all.
+#
 # Secrets/variables:
 #   secrets.STOREDEMO_TESTDINO_TOKEN   TestDino project API key
 #   vars.TESTDINO_SERVER_URL           TestDino server URL
@@ -27,6 +34,30 @@ on:
     paths:
       - '.github/workflows/storedemo-orchestrated.yml'
   workflow_dispatch:
+    # Declaring these is what makes the workflow selectable in the re-run sheet:
+    # the dashboard hides any workflow without `testdino_rerun_from`, and GitHub
+    # rejects a dispatch carrying an input the workflow does not declare.
+    inputs:
+      testdino_rerun_from:
+        description: 'TestDino run id to re-run from (empty = normal orchestrated run)'
+        required: false
+        default: ''
+      testdino_rerun_scope:
+        description: 'failed | flaky | all'
+        required: false
+        default: 'failed'
+      testdino_rerun_test_ids:
+        description: 'Comma-separated test ids — exactly these (overrides scope)'
+        required: false
+        default: ''
+      testdino_rerun_exclude_ids:
+        description: 'Comma-separated test ids to drop from the scope'
+        required: false
+        default: ''
+      testdino_rerun_sha:
+        description: 'Commit to check out, for a same-commit re-run'
+        required: false
+        default: ''
 
 env:
   TESTDINO_TOKEN: ${{ secrets.STOREDEMO_TESTDINO_TOKEN }}
@@ -35,14 +66,19 @@ env:
 jobs:
   discover:
     name: Discover and mint orchestration
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.testdino_rerun_from == ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       orchestration_id: ${{ steps.discover.outputs.orchestration_id }}
 
     steps:
+      # workflow_dispatch resolves `ref` to the branch TIP, so a same-commit
+      # re-run has to travel as an input and be checked out here. `github.sha`
+      # keeps push and every other trigger on the ref the event already chose.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
 
       - name: Setup Node.js 20.x
         uses: actions/setup-node@v4
@@ -64,6 +100,7 @@ jobs:
           test "$specs" -gt 0
           echo "orchestration_id=$id" >> "$GITHUB_OUTPUT"
 
+  # Skipped automatically on a re-run: `needs: discover` and discover is skipped.
   machine:
     name: Machine m${{ matrix.machine }} (2 workers)
     needs: discover
@@ -77,6 +114,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
 
       - name: Setup Node.js 20.x
         uses: actions/setup-node@v4
@@ -98,3 +137,49 @@ jobs:
           --orchestration-id "${{ needs.discover.outputs.orchestration_id }}"
           --device-id "m${{ matrix.machine }}"
           --workers=2
+
+  rerun:
+    name: Re-run selected tests (not orchestrated)
+    if: github.event_name == 'workflow_dispatch' && inputs.testdino_rerun_from != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps + TestDino CLI 2.7.0 + chromium
+        run: |
+          npm ci
+          npm install --no-save ./vendor/testdino-playwright-2.7.0.tgz
+          npx playwright install --with-deps chromium
+
+      # No TESTDINO_CI_RUN_ID here: a re-run is its own TestDino run, not
+      # another machine merged into the source run.
+      - name: Re-run via tdpw
+        working-directory: storedemo
+        env:
+          TD_FROM: ${{ inputs.testdino_rerun_from }}
+          TD_SCOPE: ${{ inputs.testdino_rerun_scope }}
+          TD_TEST_IDS: ${{ inputs.testdino_rerun_test_ids }}
+          TD_EXCLUDE_IDS: ${{ inputs.testdino_rerun_exclude_ids }}
+        run: |
+          set -- --rerun "${TD_SCOPE:-failed}" --from-run "$TD_FROM"
+          if [ -n "$TD_TEST_IDS" ]; then set -- "$@" --test-ids "$TD_TEST_IDS"; fi
+          if [ -n "$TD_EXCLUDE_IDS" ]; then set -- "$@" --exclude-ids "$TD_EXCLUDE_IDS"; fi
+          echo "tdpw test $*"
+          npx tdpw test "$@"
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storedemo-rerun-report
+          path: storedemo/report
+          retention-days: 7
