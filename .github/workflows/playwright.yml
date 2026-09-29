@@ -1,0 +1,75 @@
+# Runs the 5-test TestDino rerun demo (3 pass, 2 fail) and streams results to
+# TestDino live via @testdino/playwright. The workflow_dispatch inputs let the
+# TestDino dashboard's "Re-run failed tests" dispatch this workflow with only
+# the selected tests; a push runs all five.
+
+name: Playwright Tests
+
+on:
+  push:
+    paths:
+      - 'tests/rerun-failed.spec.js'
+      - 'playwright.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/playwright.yml'
+  workflow_dispatch:
+    inputs:
+      testdino_rerun_from:
+        description: 'TestDino run id to re-run from (set by TestDino)'
+        required: true
+      testdino_rerun_scope:
+        description: 'failed, flaky or failed-and-flaky'
+        default: failed
+      testdino_rerun_test_ids:
+        description: 'Comma-separated test ids (Custom selection)'
+        required: false
+      testdino_rerun_exclude_ids:
+        description: 'Comma-separated test ids to drop from the scope'
+        required: false
+      testdino_rerun_sha:
+        description: 'Commit to re-run on ("This commit")'
+        required: false
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.testdino_rerun_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install deps + chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run tests with TestDino
+        env:
+          TESTDINO_TOKEN: ${{ secrets.TESTDINO_TOKEN }}
+          TD_RERUN_FROM: ${{ inputs.testdino_rerun_from }}
+          TD_RERUN_SCOPE: ${{ inputs.testdino_rerun_scope }}
+          TD_RERUN_TEST_IDS: ${{ inputs.testdino_rerun_test_ids }}
+          TD_RERUN_EXCLUDE_IDS: ${{ inputs.testdino_rerun_exclude_ids }}
+        shell: bash
+        run: |
+          if [ -z "$TD_RERUN_FROM" ]; then
+            npx playwright test tests/rerun-failed.spec.js --project=chromium
+            exit
+          fi
+          args=(--rerun "${TD_RERUN_SCOPE:-failed}" --from-run "$TD_RERUN_FROM")
+          if [ -n "$TD_RERUN_TEST_IDS" ]; then
+            args+=(--test-ids "$TD_RERUN_TEST_IDS")
+          fi
+          if [ -n "$TD_RERUN_EXCLUDE_IDS" ]; then
+            args+=(--exclude-ids "$TD_RERUN_EXCLUDE_IDS")
+          fi
+          npx tdpw test "${args[@]}" --project=chromium
