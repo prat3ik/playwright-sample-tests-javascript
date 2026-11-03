@@ -1,8 +1,6 @@
 // @ts-check
 import { expect, test } from '@playwright/test';
 import AllPages from '../pages/AllPages.js';
-import dotenv from 'dotenv';
-dotenv.config({ override: true });
 
 let allPages;
 
@@ -11,65 +9,53 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
-async function login(username = process.env.USERNAME, password = process.env.PASSWORD) {
-  await allPages.loginPage.clickOnUserProfileIcon();
-  await allPages.loginPage.validateSignInPage();
-  await allPages.loginPage.login(username, password);
-}
-
-async function login1(username = process.env.USERNAME1, password = process.env.PASSWORD) {
-  await allPages.loginPage.clickOnUserProfileIcon();
-  await allPages.loginPage.validateSignInPage();
-  await allPages.loginPage.login(username, password);
-}
-
-async function logout() {
-  await allPages.loginPage.clickOnUserProfileIcon();
-  await allPages.loginPage.clickOnLogoutButton();
-}
-
-test('Verify that all the navbar are working properly @firefox', async () => {
-    await login();
-    await allPages.homePage.clickBackToHomeButton();
-    // await allPages.homePage.assertHomePage();
-    await allPages.homePage.clickAllProductsNav();
-    await allPages.allProductsPage.assertAllProductsTitle();
-    await allPages.homePage.clickOnContactUsLink();
-    await allPages.contactUsPage.assertContactUsTitle();
-    await allPages.homePage.clickAboutUsNav();
-    await allPages.homePage.assertAboutUsTitle();
+test.describe('Navigation Module', () => {
+  test.describe('Navbar Validation', () => {
+    test('Verify that all the navbar are working properly ',{tag: '@firefox'}, async () => {
+      await allPages.homePage.clickBackToHomeButton();
+      // await allPages.homePage.assertHomePage();
+      await allPages.homePage.clickAllProductsNav();
+      await allPages.allProductsPage.assertAllProductsTitle();
+      await allPages.homePage.clickOnContactUsLink();
+      await allPages.contactUsPage.assertContactUsTitle();
+      
+      await allPages.homePage.clickAboutUsNav();
+      await allPages.homePage.assertAboutUsTitle();
+    });
+  });
 });
 
-test('Verify that user is able to fill Contact Us page successfully @firefox', async () => {
-    await login();
-    await allPages.homePage.clickOnContactUsLink();
-    await allPages.contactUsPage.assertContactUsTitle();
-    await allPages.contactUsPage.fillContactUsForm();
-    await allPages.contactUsPage.verifySuccessContactUsFormSubmission();
+test.describe('Contact Us Module', () => {
+  test.describe('Contact Form Submission', () => {
+    test('Verify that user is able to fill Contact Us page successfully ',{tag: '@firefox'}, async () => {
+      await allPages.homePage.clickOnContactUsLink();
+      await allPages.contactUsPage.assertContactUsTitle();
+      await allPages.contactUsPage.fillContactUsForm();
+      await allPages.contactUsPage.verifySuccessContactUsFormSubmission();
+    });
+  });
 });
 
-  test('Verify that user can change password successfully @ios', async () => {
-  await test.step('Login with existing password', async () => {
-    await login1();
-  });
+test.describe('User Settings', () => {
+  test.describe('Change Password Flow', () => {
+    test('Verify that user can change password successfully ',{tag: '@ios'}, async () => {
 
-  await test.step('Change password and verify login with new password', async () => {
-    await allPages.userPage.clickOnUserProfileIcon();
-    await allPages.userPage.clickOnSecurityButton();
-    await allPages.userPage.enterNewPassword();
-    await allPages.userPage.enterConfirmNewPassword();
-    await allPages.userPage.clickOnUpdatePasswordButton();
-    await allPages.userPage.getUpdatePasswordNotification();
-  });
-  await test.step('Verify login with new password and revert back to original password', async () => {
-    // Re-login with new password
-    await logout();
-    await allPages.loginPage.login(process.env.USERNAME1, process.env.NEW_PASSWORD);
+      await test.step('Change password and verify notification', async () => {
+        await allPages.userPage.clickOnUserProfileIcon();
+        await allPages.userPage.clickOnSecurityButton();
+        await allPages.userPage.enterNewPassword();
+        await allPages.userPage.enterConfirmNewPassword();
+        await allPages.userPage.clickOnUpdatePasswordButton();
+        await allPages.userPage.getUpdatePasswordNotification();
+      });
 
-    // Revert back
-    await allPages.userPage.clickOnUserProfileIcon();
-    await allPages.userPage.clickOnSecurityButton();
-    await allPages.userPage.revertPasswordBackToOriginal();
-    await allPages.userPage.getUpdatePasswordNotification();
-  })
+      await test.step('Revert back to original password', async () => {
+        await allPages.userPage.clickOnUserProfileIcon();
+        await allPages.userPage.clickOnSecurityButton();
+        await allPages.userPage.revertPasswordBackToOriginal();
+        await allPages.userPage.getUpdatePasswordNotification();
+      });
+
+    });
+  });
 });
