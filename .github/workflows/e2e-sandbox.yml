@@ -9,9 +9,10 @@
 # Everything after "/e2e" is passed to `npx playwright test` unchanged.
 #
 # Required repository secrets:
-#   E2B_API_KEY         E2B project API key
-#   RUNNER_REPO_TOKEN   token that can read prat3ik/e2b-playwright-runner (only while that repo is private)
-#   USERNAME, PASSWORD, NEW_PASSWORD, FIRST_NAME, STREET_NAME, CITY   test data, same as test.yml
+#   E2B_API_KEY      E2B project API key
+#   RUNNER_SSH_KEY   private half of a read-only deploy key on prat3ik/e2b-playwright-runner
+#                    (needed only while that repo is private)
+#   TEST_ENV         the tests' .env file contents (USERNAME, PASSWORD, NEW_PASSWORD, S* shipping vars)
 # Optional repository variables:
 #   E2B_RUNNER_REPO     default prat3ik/e2b-playwright-runner
 #   E2B_RUNNER_REF      default main
@@ -74,7 +75,7 @@ jobs:
         with:
           repository: ${{ vars.E2B_RUNNER_REPO || 'prat3ik/e2b-playwright-runner' }}
           ref: ${{ vars.E2B_RUNNER_REF || 'main' }}
-          token: ${{ secrets.RUNNER_REPO_TOKEN || github.token }}
+          ssh-key: ${{ secrets.RUNNER_SSH_KEY }}
           path: runner
 
       - name: Set up Node
@@ -90,15 +91,9 @@ jobs:
 
       - name: Write test secrets for the sandbox
         working-directory: runner
-        run: |
-          {
-            echo "USERNAME=${{ secrets.USERNAME }}"
-            echo "PASSWORD=${{ secrets.PASSWORD }}"
-            echo "NEW_PASSWORD=${{ secrets.NEW_PASSWORD }}"
-            echo "FIRST_NAME=${{ secrets.FIRST_NAME }}"
-            echo "STREET_NAME=${{ secrets.STREET_NAME }}"
-            echo "CITY=${{ secrets.CITY }}"
-          } > test.env
+        env:
+          TEST_ENV: ${{ secrets.TEST_ENV }}
+        run: printf '%s\n' "$TEST_ENV" > test.env
 
       - name: Run tests in the E2B sandbox
         id: run
