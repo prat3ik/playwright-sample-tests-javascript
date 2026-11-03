@@ -88,3 +88,16 @@ Pull requests and issues are welcome!
 
 ## License
 
+
+## Run tests for a pull request in an E2B sandbox
+
+Comment on any pull request and the requested tests run for the PR head in an [E2B](https://e2b.dev) sandbox. The results are posted back on the PR.
+
+```
+/e2e                          # run everything
+/e2e --grep "Sign Up"         # tests matching a title
+/e2e tests/login.spec.js      # one file
+/e2e --project chromium --grep @smoke
+```
+
+Everything after `/e2e` is passed to `npx playwright test`. See `.github/workflows/e2e-sandbox.yml`.
