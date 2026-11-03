@@ -3,14 +3,18 @@
 # this job only starts the sandbox and exits (about 30 seconds of runner time).
 #
 # Usage: comment on a pull request
+#   /e2e run the login and signup tests on chromium     natural language: AI picks the tests
+#   /e2e everything related to cart and checkout
 #   /e2e                               run everything
-#   /e2e --grep "Sign Up"              only tests matching a title
-#   /e2e tests/login.spec.js           one file
-#   /e2e --project chromium --grep @smoke
-# Everything after "/e2e" is passed to `npx playwright test` unchanged.
+#   /e2e --grep "Sign Up"              Playwright args are passed through unchanged
+#   /e2e tests/login.spec.js
+# If the first word after /e2e is a flag, a path or a spec file it is treated as
+# Playwright args; any other sentence goes to the AI selector (Groq), which maps
+# it onto the tests present on the PR branch and runs exactly those.
 #
 # Required repository secrets:
 #   E2B_API_KEY        E2B project API key
+#   GROQ_API_KEY       Groq API key for natural-language test selection
 #   RUNNER_SSH_KEY     private half of a read-only deploy key on prat3ik/e2b-playwright-runner
 #                      (needed only while that repo is private)
 #   GH_RESULTS_TOKEN   GitHub token that can write issues/PR comments on this repo; the sandbox
@@ -20,6 +24,7 @@
 #   E2B_RUNNER_REPO    default prat3ik/e2b-playwright-runner
 #   E2B_RUNNER_REF     default main
 #   SANDBOX_TIMEOUT_MIN  hard cap on sandbox life, default 45
+#   GROQ_MODEL         default openai/gpt-oss-120b
 
 name: E2E in E2B sandbox
 
@@ -101,6 +106,8 @@ jobs:
           ACK_COMMENT_ID: ${{ steps.ack.outputs.comment_id }}
           TRIGGER_COMMENT_ID: ${{ github.event.comment.id }}
           TEST_ENV: ${{ secrets.TEST_ENV }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL || 'openai/gpt-oss-120b' }}
           SANDBOX_TIMEOUT_MIN: ${{ vars.SANDBOX_TIMEOUT_MIN || '45' }}
         run: npx tsx detach.ts 2>&1 | tee detach.log
 
