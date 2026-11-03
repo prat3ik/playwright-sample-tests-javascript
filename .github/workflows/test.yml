@@ -153,8 +153,7 @@
 name: Run Playwright tests
 
 on:
-  push:
-  pull_request:
+  # push/pull_request removed: PR tests run in the E2B sandbox via /e2e (e2e-sandbox.yml)
   schedule:
     - cron: '30 3 * * 1-5' # 11:00 AM IST
   workflow_dispatch:
